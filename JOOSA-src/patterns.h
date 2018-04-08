@@ -345,6 +345,34 @@ int positive_decrement(CODE **c)
        }
        return 0;
    }
+
+
+
+int simplify_branch(CODE** c){
+    int l1, l1t;
+    int l2;
+    if(
+        (is_ifnull(*c, &l1) || is_ifeq(*c, &l1) ||  is_ifnonnull(*c, &l1) || is_ifne(*c, &l1)
+        ||  is_if_icmpeq(*c, &l1) ||  is_if_icmpge(*c, &l1) ||  is_if_icmplt(*c, &l1) || is_if_icmple(*c, &l1) ||  is_if_icmpgt(*c, &l1) || is_if_icmpne(*c, &l1) || is_if_acmpeq(*c, &l1) || is_if_acmpne(*c, &l1)) &&
+        is_goto(next(*c), &l2) &&
+        is_label(nextN(*c, 2), &l1t) && l1 == l1t){
+            if (is_ifnull(*c, &l1)) return replace(c, 3, makeCODEifnonnull(l2, NULL));
+            if (is_ifnonnull(*c, &l1)) return replace(c, 3, makeCODEifnull(l2, NULL));
+            if (is_ifeq(*c, &l1)) return replace(c, 3, makeCODEifne(l2, NULL));
+            if (is_ifne(*c, &l1)) return replace(c, 3, makeCODEifeq(l2, NULL));
+            if (is_if_icmpeq(*c, &l1)) return replace(c, 3, makeCODEif_icmpne(l2, NULL));
+            if (is_if_icmpne(*c, &l1)) return replace(c, 3, makeCODEif_icmpeq(l2, NULL));
+            if (is_if_acmpne(*c, &l1)) return replace(c, 3, makeCODEif_acmpeq(l2, NULL));
+            if (is_if_acmpeq(*c, &l1)) return replace(c, 3, makeCODEif_acmpne(l2, NULL));
+            if (is_if_icmpge(*c, &l1)) return replace(c, 3, makeCODEif_icmplt(l2, NULL));
+            if (is_if_icmplt(*c, &l1)) return replace(c, 3, makeCODEif_icmpge(l2, NULL));
+            if (is_if_icmpgt(*c, &l1)) return replace(c, 3, makeCODEif_icmple(l2, NULL));
+            if (is_if_icmple(*c, &l1)) return replace(c, 3, makeCODEif_icmpgt(l2, NULL));
+        }
+    return 0;
+}
+
+
  /*
 
  iload_2
@@ -570,4 +598,5 @@ void init_patterns(void) {
     ADD_PATTERN(simplify_dup_swap_putfield_pop);
     ADD_PATTERN(simplify_swap);
     ADD_PATTERN(null_string);
+    ADD_PATTERN(simplify_branch);
 }
