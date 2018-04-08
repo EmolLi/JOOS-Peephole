@@ -20,6 +20,7 @@
  */
 
 #include <stdlib.h>
+#include <string.h>
 
 CODE* nextN(CODE* c, int n){
     CODE* result = c;
@@ -284,7 +285,7 @@ int positive_decrement(CODE **c)
  int simplify_cmp_goto(CODE **c)
  { int l1, l1t, l2, l2t, l3;
    int a, b;
-   if ( (is_if_icmplt(*c, &l1) || is_if_icmpeq(*c, &l1) || is_if_icmpge(*c, &l1) || is_if_icmpgt(*c, &l1) || is_if_icmple(*c, &l1) || is_if_icmpne(*c, &l1)) &&
+   if ( (is_if_icmplt(*c, &l1) || is_if_icmpeq(*c, &l1) || is_if_icmpge(*c, &l1) || is_if_icmpgt(*c, &l1) || is_if_icmple(*c, &l1) || is_if_icmpne(*c, &l1) || is_ifeq(*c, &l1) || is_ifne(*c, &l1) ) &&
         is_ldc_int(next(*c), &a) && a == 0 &&
         is_goto(nextN(*c, 2), &l2) &&
         is_label(nextN(*c, 3), &l1t) && l1t == l1 &&
@@ -299,12 +300,52 @@ int positive_decrement(CODE **c)
             if (is_if_icmpne(*c, &l1)) return replace(c,7,makeCODEif_icmpeq(l3,NULL));
             if (is_if_icmpgt(*c, &l1)) return replace(c,7,makeCODEif_icmple(l3,NULL));
             if (is_if_icmple(*c, &l1)) return replace(c,7,makeCODEif_icmpgt(l3,NULL));
+            if (is_ifne(*c, &l1)) return replace(c,7,makeCODEifeq(l3,NULL));
+            if (is_ifeq(*c, &l1)) return replace(c,7,makeCODEifne(l3,NULL));
    }
    return 0;
  }
 
 
-/*
+
+ /*
+ ldc "'"
+ dup
+ ifnull l1
+ goto l2
+ l1:
+ pop
+ ldc "null"
+ l2
+ =================
+ if input is null
+ ldc "null"
+
+ else
+ ldc str
+ */
+
+ int null_string(CODE **c)
+ { int l1,l2,l1t, l2t;
+    char* str = (char*) malloc(100 * sizeof(char));
+    char* strt = (char*) malloc(100 * sizeof(char));
+   if (
+       is_ldc_string(*c,&str) &&
+       is_dup(next(*c)) &&
+       is_ifnull(nextN(*c, 2), &l1) &&
+       is_goto(nextN(*c, 3), &l2) &&
+       is_label(nextN(*c, 4), &l1t) && l1t == l1 &&
+       is_pop(nextN(*c, 5)) &&
+       is_ldc_string(nextN(*c, 6), &strt) && strcmp(strt, "null") == 0 &&
+       is_label(nextN(*c, 7), &l2t) && l2t == l2){
+           droplabel(l1);
+           droplabel(l2);
+           if (str == NULL) return replace(c, 8, makeCODEldc_string("null", NULL));
+           return replace(c, 8, makeCODEldc_string(str, NULL));
+       }
+       return 0;
+   }
+ /*
 
  iload_2
  iconst_0
@@ -528,4 +569,5 @@ void init_patterns(void) {
 	ADD_PATTERN(simplify_nop);
     ADD_PATTERN(simplify_dup_swap_putfield_pop);
     ADD_PATTERN(simplify_swap);
+    ADD_PATTERN(null_string);
 }
