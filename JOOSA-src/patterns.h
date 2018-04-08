@@ -21,8 +21,8 @@
 
 int simplify_multiplication_right(CODE **c)
 { int x,k;
-  if (is_iload(*c,&x) && 
-      is_ldc_int(next(*c),&k) && 
+  if (is_iload(*c,&x) &&
+      is_ldc_int(next(*c),&k) &&
       is_imul(next(next(*c)))) {
      if (k==0) return replace(c,3,makeCODEldc_int(0,NULL));
      else if (k==1) return replace(c,3,makeCODEiload(x,NULL));
@@ -50,13 +50,32 @@ int simplify_astore(CODE **c)
   return 0;
 }
 
+
+
+/* dup
+ * istore x
+ * pop
+ * -------->
+ * istore x
+ */
+int simplify_istore(CODE **c)
+{ int x;
+  if (is_dup(*c) &&
+      is_istore(next(*c),&x) &&
+      is_pop(next(next(*c)))) {
+     return replace(c,3,makeCODEistore(x,NULL));
+  }
+  return 0;
+}
+
+
 /* iload x
  * ldc k   (0<=k<=127)
  * iadd
  * istore x
  * --------->
  * iinc x k
- */ 
+ */
 int positive_increment(CODE **c)
 { int x,y,k;
   if (is_iload(*c,&x) &&
@@ -81,7 +100,7 @@ int positive_increment(CODE **c)
  * L1:    (reference count reduced by 1)
  * goto L2
  * ...
- * L2:    (reference count increased by 1)  
+ * L2:    (reference count increased by 1)
  */
 int simplify_goto_goto(CODE **c)
 { int l1,l2;
@@ -95,6 +114,7 @@ int simplify_goto_goto(CODE **c)
 void init_patterns(void) {
 	ADD_PATTERN(simplify_multiplication_right);
 	ADD_PATTERN(simplify_astore);
+	ADD_PATTERN(simplify_istore);
 	ADD_PATTERN(positive_increment);
 	ADD_PATTERN(simplify_goto_goto);
 }
