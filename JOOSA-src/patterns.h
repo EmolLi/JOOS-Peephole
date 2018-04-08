@@ -86,6 +86,41 @@ int simplify_dup_swap_putfield_pop(CODE **c)
   return 0;
 }
 
+
+/*
+    load a
+    load b
+    swap
+    -----
+    load b
+    load a
+*/
+int simplify_swap(CODE **c)
+{   int a;
+    int b;
+    char* str = (char*) malloc(100*sizeof(char));
+  if (
+        is_ldc_string(*c, &str) &&
+        is_aload(next(*c), &b) &&
+        is_swap(nextN(*c, 2))
+    ) return replace(c, 3, makeCODEaload(b, makeCODEldc_string(str, NULL)));
+
+    if (
+          is_ldc_int(*c, &a) &&
+          is_aload(next(*c), &b) &&
+          is_swap(nextN(*c, 2))
+      ) return replace(c, 3, makeCODEaload(b, makeCODEldc_int(a, NULL)));
+  if (
+        is_ldc_int(*c, &a) &&
+        is_aload(next(*c), &b) &&
+        is_swap(nextN(*c, 2))
+    ) return replace(c, 3, makeCODEaload(b, makeCODEldc_int(a, NULL)));
+
+  return 0;
+}
+
+
+
 /* dup
  * ifne l1
  * pop
@@ -492,4 +527,5 @@ void init_patterns(void) {
 	ADD_PATTERN(simplify_cmp_goto);
 	ADD_PATTERN(simplify_nop);
     ADD_PATTERN(simplify_dup_swap_putfield_pop);
+    ADD_PATTERN(simplify_swap);
 }
