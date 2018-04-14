@@ -22,6 +22,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* nth next code */
 CODE* nextN(CODE* c, int n){
     CODE* result = c;
     while (n > 0){
@@ -30,6 +31,7 @@ CODE* nextN(CODE* c, int n){
     }
     return result;
 }
+
 
 int simplify_multiplication_right(CODE **c)
 { int x,k;
@@ -51,6 +53,7 @@ int simplify_multiplication_right(CODE **c)
  * pop
  * -------->
  * astore x
+ * reason: apparently there is no need to do dup and pop around astore
  */
 int simplify_astore(CODE **c)
 { int x;
@@ -63,15 +66,47 @@ int simplify_astore(CODE **c)
 }
 
 
+
+
+
+
+
+
+/*
+ *
+ *  aconst_null
+ *  if_acmpeq/if_acmpne l1
+ *  ----->
+ *  ifnull/ifnonnull l1
+ *
+ * reason: obviously there we can combine the two steps (load null, compare with it )
+ * into one step compareWithNull
+ */
+int aconst_null_cmp(CODE **c)
+{
+    int l;
+    if (is_aconst_null(*c)){
+        if (is_if_acmpeq(next(*c), &l)){
+            return replace(c, 2, makeCODEifnull(l, NULL));
+        }
+        if (is_if_acmpne(next(*c), &l) ){
+            return replace(c, 2, makeCODEifnonnull(l, NULL));
+        }
+    }
+    return 0;
+}
+
 /* dup
  * aload x
  * swap
  * putfield
  * pop
  * -------->
- *aload x
+ * aload x
  * swap
  * putfield
+ *
+ * reason: the dupped value is not used in any way before we pop it out
  */
 int simplify_dup_swap_putfield_pop(CODE **c)
 {   int x;
@@ -87,6 +122,15 @@ int simplify_dup_swap_putfield_pop(CODE **c)
   return 0;
 }
 
+/*
+reason: if a label is not used, we can safely remove it
+*/
+int dead_label(CODE** c){
+    int l;
+    if (is_label(*c, &l) && deadlabel(l)) return replace(c, 1, NULL);
+    return 0;
+
+}
 
 /*
     load a
@@ -95,6 +139,8 @@ int simplify_dup_swap_putfield_pop(CODE **c)
     -----
     load b
     load a
+
+    reason: load two values then swap is equal to load two value in reverse order
 */
 int simplify_swap(CODE **c)
 {   int a;
@@ -111,34 +157,90 @@ int simplify_swap(CODE **c)
           is_aload(next(*c), &b) &&
           is_swap(nextN(*c, 2))
       ) return replace(c, 3, makeCODEaload(b, makeCODEldc_int(a, NULL)));
+
   if (
-        is_ldc_int(*c, &a) &&
+        is_aload(*c, &a) &&
         is_aload(next(*c), &b) &&
         is_swap(nextN(*c, 2))
-    ) return replace(c, 3, makeCODEaload(b, makeCODEldc_int(a, NULL)));
+    ) return replace(c, 3, makeCODEaload(b, makeCODEaload(a, NULL)));
+    if (
+          is_iload(*c, &a) &&
+          is_aload(next(*c), &b) &&
+          is_swap(nextN(*c, 2))
+      ) return replace(c, 3, makeCODEaload(b, makeCODEiload(a, NULL)));
+
+  if (
+        is_aload(*c, &a) &&
+        is_iload(next(*c), &b) &&
+        is_swap(nextN(*c, 2))
+    ) return replace(c, 3, makeCODEiload(b, makeCODEaload(a, NULL)));
+
+    if (
+          is_aconst_null(*c) &&
+          is_aload(next(*c), &b) &&
+          is_swap(nextN(*c, 2))
+      ) return replace(c, 3, makeCODEaload(b, makeCODEaconst_null(NULL)));
+
+
+  return 0;
+}
+
+/*
+new A
+dup
+invokenonvirtual d
+aload b
+swap
+------------------>
+aload b
+new A
+dup
+invokenonvirtual d
+
+==========OR==========
+
+new A
+dup
+ldc e
+invokenonvirtual d
+aload b
+swap
+---------------->
+aload b
+new A
+dup
+ldc e
+invokenonvirtual d
+reason: load b first so there is no need to swap
+*/
+
+int simplify_swap_load_after_new(CODE **c)
+{
+    int b;
+    int e;
+    char* a = (char*) malloc(50 * sizeof(char));
+    char* d = (char*) malloc(50 * sizeof(char));
+    if (is_new(*c, &a) &&
+        is_dup(next(*c)) &&
+        is_invokenonvirtual(nextN(*c, 2), &d) &&
+        is_aload(nextN(*c, 3), &b) &&
+        is_swap(nextN(*c, 4))){
+            return replace(c, 5, makeCODEaload(b, makeCODEnew(a, makeCODEdup(makeCODEinvokenonvirtual(d, NULL)))));
+        }
+
+    if (is_new(*c, &a) &&
+        is_dup(next(*c)) &&
+        is_ldc_int(nextN(*c, 2), &e) &&
+        is_invokenonvirtual(nextN(*c, 3), &d) &&
+        is_aload(nextN(*c, 3), &b) &&
+        is_swap(nextN(*c, 5))){
+            return replace(c, 6, makeCODEaload(b, makeCODEnew(a, makeCODEdup(makeCODEldc_int(e, makeCODEinvokenonvirtual(d, NULL))))));
+        }
 
   return 0;
 }
 
 
-
-/* dup
- * ifne l1
- * pop
- * -------->
- *
- */
-/*
-int simplify_dup_ifne_pop(CODE **c)
-{
-    int x;
-    if (is_dup(*c) &&
-        is_ifne(next(*c),&x) &&
-        is_pop(next(next(*c)))) {
-        return replace(c,3,makeCODEifne(x,NULL));
-     }
-    return 0;
-}*/
 
 
 
@@ -167,15 +269,16 @@ int simplify_istore(CODE **c)
  * -------->
  * ldc z
  * mathOp3  // combine the effect of two operations if possible
- *//*
+ * reason: some math ops can be combined, e.g +1+2 = +3
+ */
 int simplify_math_ops(CODE **c)
 {
     int x, y;
     int result = 0;
     if (is_ldc_int(*c, &x) &&
-        (is_iadd(next(*c)) || is_isub(next(*c)) || is_idiv(next(*c)) || is_imul(next(*c))) &&
+        (is_iadd(next(*c)) || is_isub(next(*c)) || is_imul(next(*c))) &&
         is_ldc_int(nextN(*c, 2), &y) &&
-        (is_iadd(nextN(*c, 3)) || is_isub(nextN(*c, 3)) || is_idiv(nextN(*c, 3)) || is_imul(nextN(*c, 3)))){
+        (is_iadd(nextN(*c, 3)) || is_isub(nextN(*c, 3)) || is_imul(nextN(*c, 3)))){
 
             if (is_iadd(next(*c)) || is_isub(next(*c))){
                 x = is_iadd(next(*c)) ? x : -x;
@@ -194,36 +297,26 @@ int simplify_math_ops(CODE **c)
                     if (result == 1 ) return replace(c, 4, NULL);
                     return replace(c, 4, makeCODEldc_int(result, makeCODEimul(NULL)));
                 }
-                if (is_idiv(nextN(*c, 3))){
-                    result = x/y;
-                    if (result == 1) return replace(c, 4, NULL);
-                }
-            }
-            else if (is_idiv(next(*c))){
-                if (is_imul(nextN(*c, 3))){
-                    result = y/x;
-                    if (result == 1) return replace(c, 4, NULL);
-                }
-                if (is_idiv(nextN(*c, 3))){
-                    result = y*x;
-                    if (result == 1) return replace(c, 4, NULL);
-                }
+
             }
         }
   return 0;
 }
-*/
 
 
 /*
+ * return
  * nop
  * -------->
- * -
+ * nop after return can be removed safely
  */
 int simplify_nop(CODE **c)
 {
   if (is_ireturn(*c) && is_nop(next(*c))) {
      return replace(c,2, makeCODEireturn(NULL));
+  }
+  if (is_areturn(*c) && is_nop(next(*c))){
+      return replace(c,2, makeCODEareturn(NULL));
   }
 
   return 0;
@@ -254,7 +347,7 @@ int positive_increment(CODE **c)
  * istore x
  * --------->
  * iinc x -k
- *//*
+ */
 int positive_decrement(CODE **c)
 { int x,y,k;
   if (is_iload(*c,&x) &&
@@ -265,7 +358,7 @@ int positive_decrement(CODE **c)
      return replace(c,4,makeCODEiinc(x,-k,NULL));
   }
   return 0;
-}*/
+}
 
 
 
@@ -281,6 +374,8 @@ int positive_decrement(CODE **c)
    ----->
    oppositeOfIf_icmpX l3    e.g if if_icmpX is is_if_icmplt, then oppositeOfIf_icmpX should be is_if_icmpge
    (l1, l2 reference count reduced by 1)
+
+   reason: basically simplify the control struture
  */
  int simplify_cmp_goto(CODE **c)
  { int l1, l1t, l2, l2t, l3;
@@ -309,7 +404,7 @@ int positive_decrement(CODE **c)
 
 
  /*
- ldc "'"
+ ldc str
  dup
  ifnull l1
  goto l2
@@ -317,12 +412,13 @@ int positive_decrement(CODE **c)
  pop
  ldc "null"
  l2
- =================
- if input is null
- ldc "null"
+ =================>
+ (if input is null)
+    ldc "null"
+ (else)
+    ldc str
 
- else
- ldc str
+ reason: we can compare if the string is null in advance and directly load the result directly
  */
 
  int null_string(CODE **c)
@@ -347,7 +443,15 @@ int positive_decrement(CODE **c)
    }
 
 
+/*
+ ifA l1
+ goto l2
+ l1
+ --------------->
+ oppositeOf(ifA) l2
 
+ reason: ifA we go to l1, and the next line is goto l2, this means that !ifA we go to l2.
+*/
 int simplify_branch(CODE** c){
     int l1, l1t;
     int l2;
@@ -356,6 +460,7 @@ int simplify_branch(CODE** c){
         ||  is_if_icmpeq(*c, &l1) ||  is_if_icmpge(*c, &l1) ||  is_if_icmplt(*c, &l1) || is_if_icmple(*c, &l1) ||  is_if_icmpgt(*c, &l1) || is_if_icmpne(*c, &l1) || is_if_acmpeq(*c, &l1) || is_if_acmpne(*c, &l1)) &&
         is_goto(next(*c), &l2) &&
         is_label(nextN(*c, 2), &l1t) && l1 == l1t){
+            droplabel(l1);
             if (is_ifnull(*c, &l1)) return replace(c, 3, makeCODEifnonnull(l2, NULL));
             if (is_ifnonnull(*c, &l1)) return replace(c, 3, makeCODEifnull(l2, NULL));
             if (is_ifeq(*c, &l1)) return replace(c, 3, makeCODEifne(l2, NULL));
@@ -373,197 +478,32 @@ int simplify_branch(CODE** c){
 }
 
 
- /*
-
- iload_2
- iconst_0
- if_icmpeq true_12
-
- iconst_0
- goto stop_13
- true_12:
- iconst_1
- stop_13:
-
- dup
- ifne true_11
- pop
-
- iload_2
- iconst_4
- if_icmpeq true_14
-
- iconst_0
- goto stop_15
- true_14:
- iconst_1
- stop_15:
-
- true_11:
-
- dup
- ifne true_10
- pop
-
- iload_2
- ldc 8
- if_icmpeq true_16
-
- iconst_0
- goto stop_17
- true_16:
- iconst_1
- stop_17:
-
- true_10:
-
- ifeq else_8
- aload_1
- ldc "|"
 
 
-
- typedef struct OrTerm {
-     enum type { first, middle, last };
-     int ild;
-     int ldc;
-     int l1;
-     int l2;
-     int l3;
-     int l4;
-     int l5;
-     int l6;
-     OrTerm* next;
-} OrTerm;
-
-
- int simplify_or_terms(CODE **c){
-     int cnt = 0;
-     OrTerm* first = is_or_term(c);
-     int line = 11;
-     if (first != NULL && first->type == first){
-         OrTerm* last;
-         cnt++;
-         OrTerm* next = is_or_term(nextN(c, line));
-         while (next != NULL){
-             cnt++;
-             if (next->type == last) {
-                 last = next;
-                 break;
-             }
-             if (next->type == middle){
-                 line += 12;
-                 next = is_or_term(nextN(c, line));
-             }
-             else{
-                 printf("errr\n");
-                 exit(-1);
-             }
-         }
-
-
-         if (cnt > 2 && last != NULL){
-             OrTerm* cur = first;
-             CODE* code = makeCODEif_icmpne()
-             for (int i = 0; i < cnt; i++){
-
-             }
-
-         }
-     }
- }
-
-
- OrTerm* is_or_term(CODE* c){
-     OrTerm t = NEW(OrTerm);
-     int iload;
-     int ldc;
-     int l1, l2, l3, l4, l5, l6;
-     int a, b;
-       if (
-            is_iload(c, &iload) &&
-            is_ldc_int(next(c), &ldc) &&
-            is_if_icmpeq(nextN(c, 2), &l1)) &&
-            is_ldc_int(nextN(c, 3), &a) && a == 0 &&
-            is_goto(nextN(c, 4), &l2) &&
-            is_label(nextN(c, 5), &l3) &&
-            is_ldc_int(nextN(c, 6), &b) && b == 1 &&
-            is_label(nextN(c, 7), &l4) &&
-        ){
-            if (is_label(nextN(c, 8), &l5) &&
-                is_dup(nextN(c, 9)) &&
-                is_ifne(nextN(c, 10), &l6) &&
-                is_pop(nextN(c, 11))){
-                    t->l1 = l1;
-                    t->l2 = l2;
-                    t->l3 = l3;
-                    t->l4 = l4;
-                    t->l5 = l5;
-                    t->l6 = l6;
-                    t->ild = iload;
-                    t->ldc = ldc;
-                    t->type = middle;
-                    return t;   // middle term
-                }
-
-            if (is_dup(nextN(c, 8)) &&
-                is_ifne(nextN(c, 9), &l6) &&
-                is_pop(nextN(c, 10))){
-                    t->l1 = l1;
-                    t->l2 = l2;
-                    t->l3 = l3;
-                    t->l4 = l4;
-                    t->l5 = l5;
-                    t->l6 = l6;
-                    t->ild = iload;
-                    t->ldc = ldc;
-                    t->type = first;
-                    return t;
-                }
-
-            if (is_label(nextN(c, 8), &l5) &&
-                is_ifeq(nextN(c, 9), &l6)){
-                    t->l1 = l1;
-                    t->l2 = l2;
-                    t->l3 = l3;
-                    t->l4 = l4;
-                    t->l5 = l5;
-                    t->l6 = l6;
-                    t->ild = iload;
-                    t->ldc = ldc;
-                    t->type = last;
-                    return t;
-                }
+/*
+ *  iconst_0
+ *  if_cmpeq/if_cmpne L
+ *  --------->
+ *  ifeq/ifne L
+ *
+ * reason: load 0 and compare with it is equal to ifeq/ifne
+ */
+int compare_zero(CODE **c)
+{
+    int x, l;
+    if (is_ldc_int(*c, &x) && x == 0){
+        if (is_if_icmpeq(next(*c), &l)){
+            return replace(c, 2, makeCODEifeq(l, NULL));
         }
-       }
-       return NULL;
- }
+        else if (is_if_icmpne(next(*c), &l)){
+            return replace(c, 2, makeCODEifne(l, NULL));
+        }
+    }
+    return 0;
+}
 
 
 
-
- int simplify_cmp_goto(CODE **c)
- { int l1, l1t, l2, l2t, l3;
-   int a, b;
-   if ( (is_if_icmplt(*c, &l1) || is_if_icmpeq(*c, &l1) || is_if_icmpge(*c, &l1) || is_if_icmpgt(*c, &l1) || is_if_icmple(*c, &l1) || is_if_icmpne(*c, &l1)) &&
-        is_ldc_int(next(*c), &a) && a == 0 &&
-        is_goto(next(next(*c)), &l2) &&
-        is_label(next(next(next(*c))), &l1t) && l1t == l1 &&
-        is_ldc_int(next(next(next(next(*c)))), &b) && b == 1 &&
-        is_label(next(next(next(next(next(*c))))), &l2t) && l2t == l2 &&
-        is_ifeq(next(next(next(next(next(next(*c)))))), &l3)) {
-            droplabel(l1);
-            droplabel(l2);
-            if (is_if_icmplt(*c, &l1)) return replace(c,7,makeCODEif_icmpge(l3,NULL));
-            if (is_if_icmpge(*c, &l1)) return replace(c,7,makeCODEif_icmplt(l3,NULL));
-            if (is_if_icmpeq(*c, &l1)) return replace(c,7,makeCODEif_icmpne(l3,NULL));
-            if (is_if_icmpne(*c, &l1)) return replace(c,7,makeCODEif_icmpeq(l3,NULL));
-            if (is_if_icmpgt(*c, &l1)) return replace(c,7,makeCODEif_icmple(l3,NULL));
-            if (is_if_icmple(*c, &l1)) return replace(c,7,makeCODEif_icmpgt(l3,NULL));
-   }
-   return 0;
- }
-*/
 /* goto L1
  * ...
  * L1:
@@ -596,7 +536,12 @@ void init_patterns(void) {
 	ADD_PATTERN(simplify_cmp_goto);
 	ADD_PATTERN(simplify_nop);
     ADD_PATTERN(simplify_dup_swap_putfield_pop);
-    ADD_PATTERN(simplify_swap);
     ADD_PATTERN(null_string);
     ADD_PATTERN(simplify_branch);
+    ADD_PATTERN(simplify_swap);
+    ADD_PATTERN(aconst_null_cmp);
+    ADD_PATTERN(compare_zero);
+    ADD_PATTERN(simplify_math_ops);
+    ADD_PATTERN(dead_label);
+    ADD_PATTERN(simplify_swap_load_after_new);
 }
