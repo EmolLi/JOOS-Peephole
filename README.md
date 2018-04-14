@@ -1,6 +1,6 @@
-# Peephole Template
+# Peephole
 
-An introduction to the basics of peephole optimization using Java Bytecode and JOOS.
+Peephole optimization using Java Bytecode and JOOS.
 
 ## Directory Structure
 
